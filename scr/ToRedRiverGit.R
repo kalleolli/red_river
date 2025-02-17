@@ -217,6 +217,56 @@ if(T){
   
 # mlr importance ####
 
+
+if(F){ # test both_imp
+  idx <- sample(nrow(grd), 10)
+  grd_sample <- grd[idx, ]
+  bmr_a_sample <- bmr_a[idx, ]
+  
+  grd_sample <- grd
+  bmr_a_sample <- bmr_a
+  
+  both_imp <- list()
+  
+  for(i in 1:nrow(grd_sample)){
+    learner_tmp <- grd_sample[i,'learner'][[1]][[1]]$clone(deep = T)
+    if(bmr_a_sample$mod_id[i] == 'rg'){learner_tmp$param_set$values$classif.ranger.importance = 'impurity'}
+    feats = NULL
+    if(bmr_a_sample$feat_id[i] == 'cmb'){feats <- cmb_feature_groups}
+    iml_lst <- mlr_lst <- list() # igasse kogume 10 hinnangut
+    
+    for(j in 1:10){
+      print(j)
+      learner_tmp$train(grd_sample[i,'task'][[1]][[1]])
+      imp.pred <- iml::Predictor$new(model = learner_tmp, 
+                                     data = grd_sample[i,'task'][[1]][[1]]$data(), 
+                                     y = grd_sample[i,'task'][[1]][[1]]$target_names)
+      mlr_lst[[j]] <- learner_tmp$base_learner()$importance()
+      iml_lst[[j]] <- try(iml::FeatureImp$new(imp.pred, loss = "ce", features = feats)$results %>% dplyr::select(feature, importance), silent = T)
+    }
+    both_imp[[i]] <- list(mlr_df <- bind_rows(mlr_lst, .id = 'id'), iml_df <- bind_rows(iml_lst, .id = 'id'))
+    
+    cat(i, class(iml_imp[[i]]),'\n')
+  }
+  
+  
+  
+  system.time(iml_imp_tmp <- lapply(1:nrow(grd_sample), function(i){
+    learner_tmp <- grd_sample[i,'learner'][[1]][[1]]$clone(deep = T)
+    if(bmr_a_sample$mod_id[i] == 'rg'){learner_tmp$param_set$values$classif.ranger.importance = 'impurity'}
+    learner_tmp$train(grd_sample[i,'task'][[1]][[1]])
+    imp.pred <- iml::Predictor$new(model = learner_tmp, 
+                                   data = grd_sample[i,'task'][[1]][[1]]$data(), 
+                                   y = grd_sample[i,'task'][[1]][[1]]$target_names)
+    feats = NULL
+    if(bmr_a_sample$feat_id[i] == 'cmb'){feats <- cmb_feature_groups}
+    # return(learner_tmp$base_learner()$importance())
+    return(try(iml::FeatureImp$new(imp.pred, loss = "ce", features = feats)$results  %>% dplyr::select(feature, importance), silent = T))
+  })) # 5929.052
+  sapply(iml_imp_tmp, class)
+  
+} # test iml_imp
+
 if(T){
   system.time(mlr_imp <- parallel::mclapply(1:nrow(grd), function(i){
     learner_tmp <- grd[i,'learner'][[1]][[1]]$clone(deep = T)
@@ -224,7 +274,6 @@ if(T){
     learner_tmp$train(grd[i,'task'][[1]][[1]])
     return(learner_tmp$base_learner()$importance())
   }, mc.cores = 10)) # 
-  
   
   if(F){ # meil on probleem
     sapply(mlr_imp, length) %>% table() # problem? sõnaga, kui muutujat ei võetagi analüüsi, siis talle olulisust ei omistata? ja see varieerub iteratsioonist iteratsiooni
@@ -260,8 +309,6 @@ if(T){
   } # meil on probleem
 }
 
-
-   
 # iml_importance ####
 
 if(T){
@@ -350,8 +397,6 @@ if(T){
   
   
 }
-
-
 
 # parallel iml_importance ####
 
