@@ -213,8 +213,11 @@ if(T){
     facet_grid(rows = vars(feat_id),  scales = 'free_y')
 } # ggplot benchmarks
  
-  # mlr importance ####
+  }
   
+# mlr importance ####
+
+if(T){
   system.time(mlr_imp <- parallel::mclapply(1:nrow(grd), function(i){
     learner_tmp <- grd[i,'learner'][[1]][[1]]$clone(deep = T)
     if(bmr_a$mod_id[i] == 'rg'){learner_tmp$param_set$values$classif.ranger.importance = 'impurity'}
@@ -255,14 +258,16 @@ if(T){
     
     
   } # meil on probleem
- 
+}
+
+
    
-  # iml_importance ####
-  
+# iml_importance ####
+
+if(T){
   # from red_analyse.R; requires learner, task
   #      imp.pred <- iml::Predictor$new(learner, data = tsk0$data(), y = tsk0$target_names) # learner is a trained model
   # try( iml::FeatureImp$new(imp.pred, loss = "ce")$results , silent = T)
-  
   
   cmb_feature_groups <- list(
                                ap = grep('ap_',colnames(super_task), value = T) ,
@@ -292,7 +297,11 @@ if(T){
       iml_imp[[i]] <- try(iml::FeatureImp$new(imp.pred, loss = "ce", features = feats)$results %>% dplyr::select(feature, importance), silent = T)
       print(i)
     }
+    
     sapply(iml_imp, class)
+    
+    
+    
     
     
     system.time(iml_imp_tmp <- lapply(1:nrow(grd_sample), function(i){
@@ -314,7 +323,9 @@ if(T){
     
   } # test iml_imp
   
+  
   iml_imp <- list()
+  
   
   for(i in 1:nrow(grd)){
     learner_tmp <- grd[i,'learner'][[1]][[1]]$clone(deep = T)
@@ -329,7 +340,8 @@ if(T){
     iml_imp[[i]] <- try(iml::FeatureImp$new(imp.pred, loss = "ce", features = feats)$results %>% dplyr::select(feature, importance), silent = T)
     cat(i, class(iml_imp[[i]]),'\n')
   }
-  
+
+    
   sapply(iml_imp, class)
   # save the darling
   
@@ -337,11 +349,15 @@ if(T){
   load(paste0(reddir, 'dat/callrdat/importance.rda'))
   
   
+}
 
+
+
+# parallel iml_importance ####
+
+if(T){
   
-  
-  
-  system.time(iml_imp <- parallel::mclapply(1:nrow(grd_sample), function(i){
+system.time(iml_imp <- parallel::mclapply(1:nrow(grd_sample), function(i){
     learner_tmp <- grd[i,'learner'][[1]][[1]]$clone(deep = T)
     if(bmr_a$mod_id[i] == 'rg'){learner_tmp$param_set$values$classif.ranger.importance = 'impurity'}
     learner_tmp$train(grd[i,'task'][[1]][[1]])
@@ -354,9 +370,11 @@ if(T){
     return(try(iml::FeatureImp$new(imp.pred, loss = "ce", features = feats)$results, silent = T))
   }, mc.cores = 10)) # 5929.052
   
-  
-  
-  
+}
+
+## parallel both_importance ####
+
+if(T){
   both_importance <- parallel::mclapply(1:nrow(grd), function(i){
     learner_tmp <- grd[i,'learner'][[1]][[1]]$clone(deep = T)
     if(bmr_a$mod_id[i] == 'rg'){learner_tmp$param_set$values$classif.ranger.importance = 'impurity'}
@@ -374,183 +392,7 @@ if(T){
     return(list(mlr_df <- bind_rows(mlr_lst), iml_df <- bind_rows(iml_lst)))
    
   }, mc.cores = 10) 
-  
-  
-  
-  
-  learner_tmp <- grd[i,'learner'][[1]][[1]]$clone(deep = T)
-  learner_tmp$train(grd[i,'task'][[1]][[1]])
-  
-  imp.pred <- iml::Predictor$new(model = learner_tmp, 
-                                 data = grd[i,'task'][[1]][[1]]$data(), 
-                                 y = grd[i,'task'][[1]][[1]]$target_names)
-  
-  iml::FeatureImp$new(imp.pred, loss = "ce")$results
-  
-  
-  
-  learner_tmp <- grd[1,'learner'][[1]][[1]]$clone(deep = T)
-  learner_tmp$param_set$set_values(.values = grd[1,'learner'][[1]][[1]]$param_set$values)
-  learner_tmp$param_set$values$classif.ranger.importance = 'impurity'
-  learner_tmp$train(grd[1,'task'][[1]][[1]])
-  learner_tmp$base_learner()$importance()
-  
-  
-  
-  
-  
-
-  # ale business ####
-  
-  
-  
-  
-  lapply(hyptune_heads, '[[', 'x_domain') %>% lapply(., bind_rows) # list of 6 with hyperparameters in tables
-  
-  # tahaks saada 6st listi, iga 50 learneriga, mille hüperparameetrid on hyptune_heads x_domain
-  lapply(hyptune_heads, function(x){print(attr(x,'names'))})
-  
-  lst <- list(a=3, b=NA, c = runif(10))
-  lapply(lst, function(x){attributes(x)})
-  
-  lapply(seq_along(lst), function(i){nimi <- names(lst)[i]; return(n)}) #print(names(lst)[i]))
-
-  tmp <- lapply(seq_along(hyptune_heads), function(i){
-    nimi <- names(hyptune_heads)[i]
-    if(grepl('_rg', nimi)) learner1 <- glrn_rg$clone(deep = T) else learner1 <- glrn_xg$clone(deep = T)
-    # lst <- lapply(hyptune_heads[[i]]$x_domain, function(x){learner2 <- learner1$clone(deep = T); learner2$param_set$set_values(.values = x);  learner2$id <- nimi; return(learner2)})
-    lst <- lapply(1:nrow(hyptune_heads[[i]]), function(x){learner2 <- learner1$clone(deep = T); learner2$param_set$set_values(.values = hyptune_heads[[i]]$x_domain[[x]]);  learner2$id <- paste(nimi,x, sep = '_'); return(learner2)})
-    return(lst)
-        })
-  
-#  untrained_xx <- lapply(seq_along(glrn_xx_lst),function(i){glrn_xx_lst[[i]]$id = paste(names(glrn_xx_lst)[i],'0', sep = '_'); return(glrn_xx_lst[[i]])})
-  glrn_xg$id <- 'glrn_0_xg_0'
-  glrn_rg$id <- 'glrn_0_rg_0'
-  
-  grd = mlr3::benchmark_grid(
-    tasks = tsk_ap_BatD,
-    learners = c(glrn_rg, glrn_xg, unlist(tmp)),
-    rsmp('cv', folds = 5)
-  )
-  
-
-  grd = mlr3::benchmark_grid(
-    tasks = tsk_ap_BatD,
-    learners = list(glrn_fl, glrn_rg, glrn_xg, lrn_xg, glrnh_xg),
-    rsmp('cv', folds = 5)
-  )
-  
-  system.time(bmr <- mlr3::benchmark(grd)) # 800 sek
-  a <- bmr$aggregate() 
-  
-  b <- bmr$score()
-  
-  
-  table(a$learner_id)
-  
-tmp[, mean(classif.ce), by = "id"]
-  
-  
-}
-
-if(T){
-tsk_cmb_BatD <- dplyr::select(super_task, Batrachospermum, Flow_rate:mk_soo) %>% mutate(Batrachospermum = as.numeric(as.logical(Batrachospermum))) %>% as_task_classif(target = "Batrachospermum", positive = "1", id = 'BatD_cmb')
-  tsk_cmb_BatD$truth() %>% table()
-  
-  # benchmark and ...
-  # .. graph learners
-  
-  library(future)
-  plan(multisession)
  
-  tsk_ap_BatD <- dplyr::select(super_task, Batrachospermum, mk_pold:mk_soo) %>% mutate(Batrachospermum = factor(as.numeric(as.logical(Batrachospermum))), mk_soo = sample(mk_soo)) %>% as_task_classif(target = "Batrachospermum", positive = "1", id = 'BatD_ap')
   
-  
-  grd_ap = mlr3::benchmark_grid(
-    tasks = tsk_ap_BatD,
-    learners = list(lrn("classif.featureless", method = 'weighted.sample', predict_type = 'prob'), glrn_rg, glrn_xg),
-    rsmp('cv', folds = 10)
-  )
-  bmr_ap = mlr3::benchmark(grd_ap)
-  bmr_ap$aggregate()
-  
-  bmr_fk$aggregate()
-  
-    } # 
-    
-   # names(hyptune)
-   
-    # probably too optimistic
-    head(arrange(hyptune[[1]]$archive$data, classif.ce), 50) %>% select(classif.ce) %>% summary() # 0.09324  
-    head(arrange(hyptune[[2]]$archive$data, classif.ce), 50) %>% select(classif.ce) %>% summary() # 0.09055 
-    head(arrange(hyptune[[3]]$archive$data, classif.ce), 50) %>% select(classif.ce) %>% summary() # 0.09317  
-    # untrained 0.09579961; vb xgboost oli rohkem treenitav?
-    # compare with untuned
-    grd_fk = mlr3::benchmark_grid(
-      tasks = tsk_fk_BatD,
-      learners = list(glrn_fl, glrn_rg),
-      rsmp('cv', folds = 5)
-    )
-   # glrn_fl, glrn_rg
-mlr3::benchmark(grd_fk)$aggregate()
-
-    
-  
-# return to benchmark
-
-
- 
-  # random: 125/(125+1138)
-  tmp <- tsk_cmb_BatD$truth()
-  table(tmp==sample(tmp))[1]/1263 # 0.17 featureless
-  
-  bmr_cmb$aggregate() %>% filter(learner_id == 'classif.featureless')
-  bmr_cmb$aggregate() %>% filter(learner_id == 'imputemedian.classif.ranger')
-  bmr_cmb$aggregate() %>% filter(learner_id == 'imputemedian.classif.xgboost')
-  
-
-}
-
-
-
-# check data
-if(F){
-  hkese <- read.table(file = 'dat/detailsed_seireandmed-11.csv', sep = ';', header = T, dec = ",") # 93362 
-  # low pH 
-  filter(redCCM, p_h_proovivotul < 6) %>% as.data.table()
-  filter(redh, veekogu_kkr %in% c('VEE1062300','VEE1002700')) %>% as.data.table()
-  
-  filter(hkese, Veekogu.KKR %in% c('VEE1062300','VEE1002700')) %>% as.data.table() %>% filter(Näitaja.nimetus == 'pH (proovivõtul)')
-    
-    
-   
-  
-} # ja ongi pH alla 5 kahes kohas!
-
-
-# history: lst failid on red_geol_features.R tehtud, aeganõudev:
-if(F){
-#  aluspohi <- read_sf(dsn = paste0(geo_dir, "./shp/Aluspohi400k_shp/AP400_Avamus.shp")) %>% st_transform(., st_crs(vlg3)); st_agr(aluspohi) = "constant"
-#  aluspohi$idx1 <- aluspohi$Indeks %>% str_sub(., 1, 1)
-  
-#  aluspohi.lst <- mclapply(geodb_sf$veekogu_kkr, function(x){
-#    vg <- filter(geodb_sf, veekogu_kkr == x) %>% dplyr::select(geometry); 
-#    tmp <- st_intersection(dplyr::select(aluspohi, idx1), vg); 
-#    return(data.frame(idx1=tmp$idx1, area = as.numeric(st_area(tmp))) %>% dplyr::summarize(sarea = sum(area), .by = idx1))}, mc.cores = 10) # return 734
-  # aluspohi.df <- bind_rows(aluspohi.lst, .id = 'id') %>%  pivot_wider(., names_from = idx1, values_from = sarea); dim(aluspohi.df) # 734 x 8
-  
-} # 734 unikaalset seirekoha valgala
-
-# geol.lst to features ####
-# code from red_geol_features.R
-
-
-load(file = paste0(reddir,'dat/red_river_ini.rda')) # dat, red, redh, redCCM # from RedRiverIni.R
-
-load(file = paste0(reddir, 'dat/red_geol_features.rda')) # geodb, ap, pk, mk, pinnakate_kood; from Red_geol_features.R
-load(file = paste0(reddir, 'dat/red_tasks.rda'))
-
-# kõik mis meil vaja: redCCM [1263 x 35] ja tsk_cmb_raw [1263 x  37]
-tsk_BatD_ap_raw$data() %>% dim()
-
+} # both_importance
 
