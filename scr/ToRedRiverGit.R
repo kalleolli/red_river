@@ -8,12 +8,11 @@ library(mlr3pipelines)
 library(iml)
 library(ranger)
 library(xgboost)
-library(tidyverse)
 
 library(mlr3tuningspaces)
 library(mlr3extralearners)
-
-
+library(dplyr)
+library(tidyverse)
 
 
 ## `red_geol_features.R` -> `red_geol_features.rda` võtab jubetumalt aega
@@ -128,6 +127,7 @@ if(F){ # takes time with callr
   
   rp2$is_alive()
   
+ 
 } # takes time with callr
 
 
@@ -149,21 +149,21 @@ if(T){
   
   hyp_files <- list.files(paste0(reddir,'dat/')) %>% grep('hyptune', .,  value = T) # 12
   
+# make a list of learners with hyperband tuned parameters included  
+  # list of 12 - each is combo of Red/Bat, x 6 feature groups (cmb, fk, ap, pk, mk, st)
+  # each of 12 is 50 header x 6 learners = 300 learners per list slot
 # loop over 12 hyp_files; load (as hyptune_heads)
   
   hyp_lst <- list() # siia kogume 12 hyptune learnerite setti
-  
   for(hf in 1:length(hyp_files)){
     load(paste0(reddir,'dat/', hyp_files[hf])) # loads hyptune_heads; length 6
     # tahaks saada 6st listi, iga 50 learneriga, mille hüperparameetrid on hyptune_heads x_domain
     tmp <- lapply(seq_along(hyptune_heads), function(i){
       nimi <- names(hyptune_heads)[i]
       if(grepl('_rg', nimi)) learner1 <- glrn_rg$clone(deep = T) else learner1 <- glrn_xg$clone(deep = T)
-      lst <- lapply(1:nrow(hyptune_heads[[i]]), function(x){learner2 <- learner1$clone(deep = T); learner2$param_set$set_values(.values = hyptune_heads[[i]]$x_domain[[x]]);  learner2$id <- paste(nimi,x, sep = '_'); return(learner2)})
+      lst <- lapply(1:nrow(hyptune_heads[[i]]), function(x){learner2 <- learner1$clone(deep = T); learner2$param_set$set_values(.values = hyptune_heads[[i]]$x_domain[[x]]);  learner2$id <- paste(nimi, x, sep = '_'); return(learner2)})
       return(lst)
     })
-    
-    
     hyp_lst[[hf]] <- unlist(tmp)
     print(hf)
   }
@@ -182,10 +182,11 @@ if(T){
       tasks = tsks[i],
       learners = c(glrn_rg, glrn_xg, hyp_lst[[i]]),
       rsmp('cv', folds = 5))
-  } # 4.7 Mb object
+  }
   # unlist
   grd <- bind_rows(grd_lst) # 3624  x  3 benchmark grid
   
+  save(grd, file = './dat/grd.rda')
   library(future)
   plan(multisession) # speeds up benchmarking
   
@@ -215,26 +216,40 @@ if(T){
  
   }
   
-# mlr importance ####
+
+# both importance ####
+
+# do it linearly - horribly long, but does not screw up.
+
+if(T){  # cmb_feature_groups needed for iml
+  cmb_feature_groups <- list(
+    ap = grep('ap_',colnames(super_task), value = T) ,
+    mk = grep('mk_',colnames(super_task), value = T) ,
+    pk = grep('pk_',colnames(super_task), value = T) ,
+    st = grep('st_',colnames(super_task), value = T) ,
+    fk = colnames(select(super_task, fk_Flow_rate:fk_EC, -fk_O2)))
+} # cmb_feature_groups needed for iml
 
 
-if(F){ # test both_imp
-  idx <- sample(nrow(grd), 10)
-  grd_sample <- grd[idx, ]
-  bmr_a_sample <- bmr_a[idx, ]
+if(F){ #  both_importance
   
+  if(F){# if we want a small test set
+    idx <- sample(nrow(grd), 10)
+    grd_sample <- grd[idx, ]
+    bmr_a_sample <- bmr_a[idx, ]
+  } # if we want a small test set
+  # if we want whole set:
   grd_sample <- grd
   bmr_a_sample <- bmr_a
   
-  both_imp <- list()
   
+  both_imp <- list() # initiate
   for(i in 1:nrow(grd_sample)){
     learner_tmp <- grd_sample[i,'learner'][[1]][[1]]$clone(deep = T)
     if(bmr_a_sample$mod_id[i] == 'rg'){learner_tmp$param_set$values$classif.ranger.importance = 'impurity'}
     feats = NULL
     if(bmr_a_sample$feat_id[i] == 'cmb'){feats <- cmb_feature_groups}
     iml_lst <- mlr_lst <- list() # igasse kogume 10 hinnangut
-    
     for(j in 1:10){
       print(j)
       learner_tmp$train(grd_sample[i,'task'][[1]][[1]])
@@ -247,7 +262,30 @@ if(F){ # test both_imp
     both_imp[[i]] <- list(mlr_df <- bind_rows(mlr_lst, .id = 'id'), iml_df <- bind_rows(iml_lst, .id = 'id'))
     
     cat(i, class(iml_imp[[i]]),'\n')
-  }
+  } # both importance linear
+  
+  # faster versions are lapply and mclapply
+  
+  system.time(bothl3_imp <- mclapply(1:nrow(grd_sample), function(i){
+    learner_tmp <- grd_sample[i,'learner'][[1]][[1]]$clone(deep = T)
+    if(bmr_a_sample$mod_id[i] == 'rg'){learner_tmp$param_set$values$classif.ranger.importance = 'impurity'}
+    feats = NULL
+    if(bmr_a_sample$feat_id[i] == 'cmb'){feats <- cmb_feature_groups}
+    iml_lst <- mlr_lst <- list() # igasse kogume 10 hinnangut
+    for(j in 1:10){
+      learner_tmp$train(grd_sample[i,'task'][[1]][[1]])
+      imp.pred <- iml::Predictor$new(model = learner_tmp, 
+                                     data = grd_sample[i,'task'][[1]][[1]]$data(), 
+                                     y = grd_sample[i,'task'][[1]][[1]]$target_names)
+      mlr_lst[[j]] <- learner_tmp$base_learner()$importance()
+      iml_lst[[j]] <- try(iml::FeatureImp$new(imp.pred, loss = "ce", features = feats)$results %>% dplyr::select(feature, importance), silent = T)
+    }
+    return(list(bind_rows(mlr_lst, .id = 'id'), bind_rows(iml_lst, .id = 'id')))
+  }, mc.cores = 10)) # both importance lapply
+  # lapply 1 tuum ca 350% 494 (= 50h) sek
+  # mclapply 10, 258 sek (= 26 h), swap läks ikka 1.5Gb peale
+  
+  
   
   
   
@@ -265,7 +303,188 @@ if(F){ # test both_imp
   })) # 5929.052
   sapply(iml_imp_tmp, class)
   
-} # test iml_imp
+} # both importance
+
+
+# Feature Importance figs  ####
+
+if(T){
+  
+  # partition both_imp to mlr and iml parts
+  mlr.imp <- lapply(bothl3_imp, '[[', 2)
+  
+  # scale mlr importance estimates with decostand, max and total
+  tmp <- lapply(mlr.imp, function(x){mutate(x, .by = 'id', impmax = vegan::decostand(importance, method = 'max'), imprange = vegan::decostand(importance, method = 'range'))})
+  
+  mlr.importance <- list()
+  # add all classificators for downstream filtering
+  for(i in 1:length(tmp)){
+    mlr.importance[[i]] <- bind_cols(tmp[[i]], bmr_a_sample[i, classif.ce:batch_id])
+  }
+  mlr.importance <- bind_rows(mlr.importance)
+  
+  
+  # box mlr
+  
+  dat <- filter(mlr.importance, feat_id == 'fk')
+  
+  ggplot(dat) + geom_boxplot(aes(y = impmax, x=feature, col=hyp_id)) + facet_grid(rows = vars(mod_id),  cols = vars(red_id), scales = 'free_y')  + ggtitle("MLR") + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + theme(legend.position="none")
+  
+  ggplot(dat) +  geom_boxplot(aes(y = imprange, x=feature, col=hyp_id)) + facet_grid(rows = vars(mod_id),  cols = vars(red_id), scales = 'free_y')  + ggtitle("MLR") + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + theme(legend.position="none")
+  
+  
+  # box iml
+  
+  iml.imp <- lapply(bothl3_imp, '[[', 1)
+  
+  tmp <- list()
+  for(i in 1:length(iml.imp)){
+    tmp[[i]] <- pivot_longer(iml.imp[[i]], cols = -id, names_to = 'feature', values_to = 'importance') %>% 
+      bind_cols(., bmr_a_sample[i,]) %>% 
+      mutate(., .by = 'id', impmax = vegan::decostand(importance, method = 'max'), imprange = vegan::decostand(importance, method = 'range'))
+  }
+  iml.importance <- bind_rows(tmp)
+  
+  iml.dat <- filter(iml.importance, feat_id == 'fk')
+  
+  ggplot(iml.dat) + geom_boxplot(aes(y = impmax, x=feature, col=hyp_id)) + facet_grid(rows = vars(mod_id),  cols = vars(red_id), scales = 'free_y')  + ggtitle("IML") + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + theme(legend.position="none")
+  
+  ggplot(iml.dat) +  geom_boxplot(aes(y = imprange, x=feature, col=hyp_id)) + facet_grid(rows = vars(mod_id),  cols = vars(red_id), scales = 'free_y')  + ggtitle("IML") + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + theme(legend.position="none")
+  
+  
+} # importance figs
+
+
+# ALE ####
+
+# ale effect needs trained learner again
+
+if(F){# if we want a small test set
+  idx <- sample(nrow(grd), 10)
+  grd_sample <- grd[idx, ]
+  bmr_a_sample <- bmr_a[idx, ]
+} # if we want a small test set
+# if we want whole set:
+# grd_sample <- grd
+# bmr_a_sample <- bmr_a
+
+
+
+ale_eff <- list() # initiate as in both_imp
+for(i in 1:nrow(grd_sample)){
+  learner_tmp <- grd_sample[i,'learner'][[1]][[1]]$clone(deep = T)
+  if(bmr_a_sample$mod_id[i] == 'rg'){learner_tmp$param_set$values$classif.ranger.importance = 'impurity'}
+  ale_lst <- list() # igasse kogume 10 hinnangut
+    task_feature_names <- grd_sample[i,'task'][[1]][[1]]$feature_names
+  for(j in 1:10){
+    print(j)
+    learner_tmp$train(grd_sample[i,'task'][[1]][[1]])
+    imp.pred <- iml::Predictor$new(model = learner_tmp, data = grd_sample[i,'task'][[1]][[1]]$data(), y = grd_sample[i,'task'][[1]][[1]]$target_names)
+   
+    #iml_lst[[j]] <- try(iml::FeatureImp$new(imp.pred, loss = "ce", features = feats)$results %>% dplyr::select(feature, importance), silent = T)
+    
+    eff_lst <- list()
+    for(e in 1:length(task_feature_names)){eff_lst[[e]] <- iml::FeatureEffect$new(predictor = imp.pred, feature = task_feature_names[e], grid.size = 60)$results %>% filter(.class ==1)}
+    names(eff_lst) <- task_feature_names
+    tmp <- lapply(eff_lst, function(x){colnames(x)[3:4] <- c('value','X'); return(dplyr::select(x, value, X))})
+    eff_df <- bind_rows(tmp, .id = 'feature')
+    ale_lst[[j]] <- eff_df
+  } # end j loop
+  # both_imp[[i]] <- list(mlr_df <- bind_rows(mlr_lst, .id = 'id'), iml_df <- bind_rows(iml_lst, .id = 'id'))
+    ale_eff[[i]] <- ale_lst
+  cat(i, class(ale_eff[[i]]),'\n')
+} # ALE linear
+
+tmp <- lapply(ale_eff, bind_rows, .id ='batch') # list of 
+
+
+# All_impact ####
+
+## all impact linear ####
+all_imp <- list() # initiate
+system.time(for(i in 1:nrow(grd_sample)){
+  learner_tmp <- grd_sample[i,'learner'][[1]][[1]]$clone(deep = T)
+  if(bmr_a_sample$mod_id[i] == 'rg'){learner_tmp$param_set$values$classif.ranger.importance = 'impurity'}
+  feats = NULL
+  if(bmr_a_sample$feat_id[i] == 'cmb'){feats <- cmb_feature_groups}
+  task_feature_names <- grd_sample[i,'task'][[1]][[1]]$feature_names
+  iml_lst <- mlr_lst <- ale_lst <- list() # igasse kogume 10 hinnangut
+  for(j in 1:10){
+    print(j)
+    learner_tmp$train(grd_sample[i,'task'][[1]][[1]])
+    imp.pred <- iml::Predictor$new(model = learner_tmp, data = grd_sample[i,'task'][[1]][[1]]$data(), y = grd_sample[i,'task'][[1]][[1]]$target_names)
+    
+    mlr_lst[[j]] <- learner_tmp$base_learner()$importance()
+    iml_lst[[j]] <- try(iml::FeatureImp$new(imp.pred, loss = "ce", features = feats)$results %>% dplyr::select(feature, importance), silent = T)
+    
+    eff_lst <- list()
+    for(e in 1:length(task_feature_names)){eff_lst[[e]] <- iml::FeatureEffect$new(predictor = imp.pred, feature = task_feature_names[e], grid.size = 60)$results %>% filter(.class ==1)}
+    names(eff_lst) <- task_feature_names
+    tmp <- lapply(eff_lst, function(x){colnames(x)[3:4] <- c('value','X'); return(dplyr::select(x, value, X))})
+    eff_df <- bind_rows(tmp, .id = 'feature')
+    ale_lst[[j]] <- eff_df
+  } # end j loop
+  
+  all_imp[[i]] <- list(bind_rows(mlr_lst, .id = 'id'), bind_rows(iml_lst, .id = 'id'), bind_rows(ale_lst, .id = 'batch'))
+  
+  cat(i, class(all_imp[[i]]),'\n')
+}) # all impact linear
+  # linear elapsed 681.031, user 2433.073 
+
+## all impact lapply ####
+
+
+
+# all_impacts requires: cmb_feature_groups, grd, bmr_a
+# save(cmb_feature_groups, grd, bmr_a, file = './dat/all_impact_input.rda')
+# load('./dat/all_impact_input.rda')
+
+
+if(F){# if we want a small test set
+  idx <- sample(nrow(grd), 10)
+  grd_sample <- grd[idx, ]
+  bmr_a_sample <- bmr_a[idx, ]
+} # if we want a small test set
+
+
+system.time(
+  all_imp_mcl <- mclapply(1:nrow(grd_sample),function(i){
+  learner_tmp <- grd_sample[i,'learner'][[1]][[1]]$clone(deep = T)
+  if(bmr_a_sample$mod_id[i] == 'rg'){learner_tmp$param_set$values$classif.ranger.importance = 'impurity'}
+  feats = NULL
+  if(bmr_a_sample$feat_id[i] == 'cmb'){feats <- cmb_feature_groups}
+  task_feature_names <- grd_sample[i,'task'][[1]][[1]]$feature_names
+  iml_lst <- mlr_lst <- ale_lst <- list() # igasse kogume 10 hinnangut
+  message("Processing item ", i)
+  for(j in 1:10){
+    learner_tmp$train(grd_sample[i,'task'][[1]][[1]])
+    imp.pred <- iml::Predictor$new(model = learner_tmp, data = grd_sample[i,'task'][[1]][[1]]$data(), y = grd_sample[i,'task'][[1]][[1]]$target_names)
+    
+    mlr_lst[[j]] <- learner_tmp$base_learner()$importance()
+    iml_lst[[j]] <- try(iml::FeatureImp$new(imp.pred, loss = "ce", features = feats)$results %>% dplyr::select(feature, importance), silent = T)
+    
+    eff_lst <- list()
+    for(e in 1:length(task_feature_names)){eff_lst[[e]] <- iml::FeatureEffect$new(predictor = imp.pred, feature = task_feature_names[e], grid.size = 60)$results %>% filter(.class ==1)}
+    names(eff_lst) <- task_feature_names
+    tmp <- lapply(eff_lst, function(x){colnames(x)[3:4] <- c('value','X'); return(dplyr::select(x, value, X))})
+    eff_df <- bind_rows(tmp, .id = 'feature')
+    ale_lst[[j]] <- eff_df
+  } # end j loop
+  return(list(bind_rows(mlr_lst, .id = 'id'), bind_rows(iml_lst, .id = 'id'), bind_rows(ale_lst, .id = 'id')))
+  }, mc.cores = 10)
+) # all impact lapply
+
+# lapply     400 = 39 h, user 1451
+# mclapply10 152 = 12 h, user 389
+# mclapply1  393 = xx h, user 1442
+# linear     391, user 1441
+
+tmp <- mclapply(1:10, function(i){i+2; cat(i,'\n'); return(42)})
+
+
+
+
+
 
 if(T){
   system.time(mlr_imp <- parallel::mclapply(1:nrow(grd), function(i){
