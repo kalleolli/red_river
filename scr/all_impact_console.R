@@ -32,32 +32,65 @@ if(T){# if we want a small test set
 
 message("grd_sample done", length(idx))
 
-all_imp_mcl <- mclapply(1:nrow(grd_sample),function(i){
-  task_tmp <- grd_sample[i, 'task'][[1]][[1]]$clone(deep = T)
-  learner_tmp <- grd_sample[i, 'learner'][[1]][[1]]$clone(deep = T)
-  if(grepl('_rg_', learner_tmp$id)){learner_tmp$param_set$values$classif.ranger.importance = 'impurity'}
-  feats = NULL
-  if(grepl('_cmb', task_tmp$id)){feats <- cmb_feature_groups}
-  task_feature_names <- task_tmp$feature_names
-  iml_lst <- mlr_lst <- ale_lst <- list() # igasse kogume 10 hinnangut
-  message("Processing item ", i)
-  for(j in 1:10){
-    message("Processing j ", j)
-    learner_tmp$train(task_tmp)
-    imp.pred <- iml::Predictor$new(model = learner_tmp, data = task_tmp$data(), y = task_tmp$target_names)
-    
-    mlr_lst[[j]] <- learner_tmp$base_learner()$importance()
-    iml_lst[[j]] <- try(iml::FeatureImp$new(imp.pred, loss = "ce", features = feats)$results %>% dplyr::select(feature, importance), silent = T)
-    
-    eff_lst <- list()
-    for(e in 1:length(task_feature_names)){eff_lst[[e]] <- iml::FeatureEffect$new(predictor = imp.pred, feature = task_feature_names[e], grid.size = 60)$results %>% filter(.class ==1)}
-    names(eff_lst) <- task_feature_names
-    tmp <- lapply(eff_lst, function(x){colnames(x)[3:4] <- c('value','X'); return(dplyr::select(x, value, X))})
-    eff_df <- bind_rows(tmp, .id = 'feature')
-    ale_lst[[j]] <- eff_df
-  } # end j loop
-  return(list(bind_rows(mlr_lst, .id = 'id'), bind_rows(iml_lst, .id = 'id'), bind_rows(ale_lst, .id = 'id')))
-}, mc.cores = 10)
+# if we want only pdp 
+if(T){
+  pdp_imp_mcl <- mclapply(1:nrow(grd_sample),function(i){
+    task_tmp <- grd_sample[i, 'task'][[1]][[1]]$clone(deep = T)
+    learner_tmp <- grd_sample[i, 'learner'][[1]][[1]]$clone(deep = T)
+    task_feature_names <- task_tmp$feature_names
+    pdp_lst <- list() # igasse kogume 10 hinnangut
+    message("Processing item ", i)
+    for(j in 1:10){
+      message("Processing j ", j)
+      learner_tmp$train(task_tmp)
+      imp.pred <- iml::Predictor$new(model = learner_tmp, data = task_tmp$data())
+      
+      eff_lst <- list()
+      for(e in 1:length(task_feature_names)){
+        feature_range <- range(task_tmp$data(cols=task_feature_names[e]), na.rm=T)# get feature range
+        feature_grid <- seq(feature_range[1], feature_range[2], length=20)
+        eff_lst[[e]] <- iml::FeatureEffect$new(predictor = imp.pred, feature = task_feature_names[e], method = 'pdp', grid.points = feature_grid)$results %>% filter(.class == 1) } # end e loop
+      
+      names(eff_lst) <- task_feature_names
+      tmp <- lapply(eff_lst, function(x){colnames(x)[c(1,3)] <- c('X','value'); return(dplyr::select(x, value, X))})
+      eff_df <- bind_rows(tmp, .id = 'feature')
+      pdp_lst[[j]] <- eff_df
+    } # end j loop
+    return(bind_rows(pdp_lst, .id = 'id') )
+  }, mc.cores = 1)
+  
+  save(pdp_imp_mcl, file = './dat/pdp_imp_mcl.rda')
+}
 
-save(all_imp_mcl, file = './dat/all_imp_mcl.rda')
+if(F){
+  all_imp_mcl <- mclapply(1:nrow(grd_sample),function(i){
+    task_tmp <- grd_sample[i, 'task'][[1]][[1]]$clone(deep = T)
+    learner_tmp <- grd_sample[i, 'learner'][[1]][[1]]$clone(deep = T)
+    if(grepl('_rg_', learner_tmp$id)){learner_tmp$param_set$values$classif.ranger.importance = 'impurity'}
+    feats = NULL
+    if(grepl('_cmb', task_tmp$id)){feats <- cmb_feature_groups}
+    task_feature_names <- task_tmp$feature_names
+    iml_lst <- mlr_lst <- ale_lst <- list() # igasse kogume 10 hinnangut
+    message("Processing item ", i)
+    for(j in 1:10){
+      message("Processing j ", j)
+      learner_tmp$train(task_tmp)
+      imp.pred <- iml::Predictor$new(model = learner_tmp, data = task_tmp$data(), y = task_tmp$target_names)
+      
+      mlr_lst[[j]] <- learner_tmp$base_learner()$importance()
+      iml_lst[[j]] <- try(iml::FeatureImp$new(imp.pred, loss = "ce", features = feats)$results %>% dplyr::select(feature, importance), silent = T)
+      
+      eff_lst <- list()
+      for(e in 1:length(task_feature_names)){eff_lst[[e]] <- iml::FeatureEffect$new(predictor = imp.pred, feature = task_feature_names[e], grid.size = 60)$results %>% filter(.class ==1)}
+      names(eff_lst) <- task_feature_names
+      tmp <- lapply(eff_lst, function(x){colnames(x)[3:4] <- c('value','X'); return(dplyr::select(x, value, X))})
+      eff_df <- bind_rows(tmp, .id = 'feature')
+      ale_lst[[j]] <- eff_df
+    } # end j loop
+    return(list(bind_rows(mlr_lst, .id = 'id'), bind_rows(iml_lst, .id = 'id'), bind_rows(ale_lst, .id = 'id')))
+  }, mc.cores = 10)
+  
+  save(all_imp_mcl, file = './dat/all_imp_mcl.rda')
+}
+
 

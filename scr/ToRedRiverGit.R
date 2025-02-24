@@ -33,7 +33,7 @@ rm(list=grep('reddir',ls(), value = T, invert = T)) # garbage collection all but
 load(paste0(reddir, 'dat/super_task.rda') ) 
 
 
-### mlr3 tasks on the fly ####
+## tasks on the fly ####
 
 if(T){
   #     tsk_cmb_BatD$truth() %>% table()
@@ -69,6 +69,8 @@ if(T){
 } # 12 tasks on the fly; tsks - task list of 12
 
 
+## learners on the fly ####
+
 # Agnostic Learners on the fly # requires mlr3tuningspaces
 if(T){
   # ranger tuning spaces 
@@ -81,7 +83,7 @@ if(T){
   lrn_1_xg <- mlr3tuningspaces::lts("classif.xgboost.rbv1", booster = to_tune(p_fct(levels = c("gbtree", "dart"))), nrounds = to_tune(p_int(4, 2048, tags = "budget")))$get_learner(predict_type = 'prob')
   lrn_2_xg <- lts("classif.xgboost.rbv2", booster = to_tune(p_fct(levels = c("gbtree", "dart"))),nrounds = to_tune(p_int(4, 2048, tags = "budget")))$get_learner(predict_type = 'prob')
   
-  # make graph
+  # make it graph
   
   glrn_D_rg <- as_learner(po("imputemedian") %>>% lrn_D_rg)
   glrn_1_rg <- as_learner(po("imputemedian") %>>% lrn_1_rg)
@@ -93,15 +95,14 @@ if(T){
   glrn_2_xg <- as_learner(po("imputemedian") %>>% lrn_2_xg)
   
   # ls(patter = 'lrn_') 12 # learners
-} # agnostic learners with tuning spaces on the fly
+  
+  
+  # make graph learner list
+  glrn_xx_lst <- mget(ls(pattern = '^glrn_._.g')) #
+  
+} # agnostic learners with tuning spaces on the fly in a list glrn_xx_lst
 
-# make graph learner list
-
-glrn_xx_lst <- mget(ls(pattern = '^glrn_._.g')) #
-
-# callr hyperband tuning ####
-
-# saves hypertune headers to folder ./dat/callrdat/ 
+## hyperband tuning ####
 library(callr)
 
 if(F){ # takes time with callr
@@ -129,9 +130,14 @@ if(F){ # takes time with callr
   
  
 } # takes time with callr
+# provides 12 hyptune_tsk_*.rda header files in ./dat folder
 
 
-# benchmark ###
+# benchmark ####
+
+# benchmark hyperband tuned hyperparameter collections of 50 with the respective tasks
+
+# make lightweight featureless, xg and rg learners
 
 if(T){
   # ranger does not accept missing data, we impute median values with graph learner
@@ -139,20 +145,16 @@ if(T){
   glrn_xg <- as_learner(po("imputemedian") %>>% lrn("classif.xgboost", predict_type = 'prob'))
   glrn_rg <- as_learner(po("imputemedian") %>>% lrn("classif.ranger", predict_type = 'prob', importance = 'impurity'))
   
-  
-  # glrn_xg$param_set$values
-  # glrn_rg$param_set$values
-  
-  # load hyptune header files
-  # BatD_hyp_files <- list.files(paste0(reddir,'dat/callrdat/')) %>% grep('BatD.rda', .,  value = T)
-  # RedD_hyp_files <- list.files(paste0(reddir,'dat/callrdat/')) %>% grep('RedD.rda', .,  value = T)
-  
-  hyp_files <- list.files(paste0(reddir,'dat/')) %>% grep('hyptune', .,  value = T) # 12
-  
+} # provides glrn_* three light learners
+
+if(T){
 # make a list of learners with hyperband tuned parameters included  
   # list of 12 - each is combo of Red/Bat, x 6 feature groups (cmb, fk, ap, pk, mk, st)
   # each of 12 is 50 header x 6 learners = 300 learners per list slot
 # loop over 12 hyp_files; load (as hyptune_heads)
+  
+  # list of 12 files, which store the tuned hyperparameter sets
+  hyp_files <- list.files(paste0(reddir,'dat/')) %>% grep('hyptune', .,  value = T) # 12
   
   hyp_lst <- list() # siia kogume 12 hyptune learnerite setti
   for(hf in 1:length(hyp_files)){
@@ -167,15 +169,18 @@ if(T){
     hyp_lst[[hf]] <- unlist(tmp)
     print(hf)
   }
-  names(hyp_lst) <- sub('hyptune_tsk_','',hyp_files) %>% sub('.rda','',.)
+  names(hyp_lst) <- sub('hyptune_tsk_','', hyp_files) %>% sub('.rda','',.)
  
-  names(tsks) # from tasks_on_the_fly
+} # provides hyp_lst - list of heavy learners with hyperparameters, ready to be benchmarked
 
+if(T){
+  names(tsks) # from tasks_on_the_fly
   
   # benchmark grid - hyp_lst
   glrn_xg$id <- 'glrn_0_xg_0'
   glrn_rg$id <- 'glrn_0_rg_0'
   
+  ## list of benchmark grids
   grd_lst <- list()
   for(i in 1:length(hyp_lst)){
     grd_lst[[i]] <- mlr3::benchmark_grid(
@@ -185,39 +190,168 @@ if(T){
   }
   # unlist
   grd <- bind_rows(grd_lst) # 3624  x  3 benchmark grid
+  save(grd, file = './dat/grd.rda') 
   
-  save(grd, file = './dat/grd.rda')
-  library(future)
-  plan(multisession) # speeds up benchmarking
-  
-  # makes or loads bmr and bmr_a
-  if(file.exists(paste0(reddir, 'dat/bmr.rda'))){load(paste0(reddir, 'dat/bmr.rda'))} else 
-  {system.time(bmr <- mlr3::benchmark(grd)) 
-    bmr_a <- bmr$aggregate() ; dim(bmr_a)
-    
-    # parse bmr categories; delete capital D
-    bmr_a <- strsplit(bmr_a$task_id, '_') %>% do.call(rbind, .) %>% as.data.table() %>% transmute(., red_id = sub('D','',V1), feat_id = V2) %>% bind_cols(bmr_a, .)
-    # table(bmr_a$feat_id) # all 604
-    bmr_a <- strsplit(bmr_a$learner_id, '_') %>% do.call(rbind, .) %>% as.data.table() %>% transmute(., hyp_id = V2, mod_id = sub('b','',V3), batch_id = V4) %>% bind_cols(bmr_a, .)
-    save(bmr, bmr_a, file = paste0(reddir, 'dat/bmr.rda'))
-    }
+} # provides and saves 3624  x  3 ./dat/grd.rda - benchmark grid object
 
-    # benchmark verdict: with un-tuned models, rg is much better than xg. However, rg does not improve with tuning, while xg does and finally beats rg on classif.ce front.
-  
-  if(T){
-  ggplot(filter(bmr_a, red_id != 'Bat', hyp_id !=  '0')) + geom_boxplot(aes(x = mod_id, y = classif.ce, col = hyp_id)) +
-    geom_hline(data = filter(bmr_a, red_id != 'Bat', hyp_id ==  '0'), mapping = aes(yintercept = classif.ce, colour = mod_id), linetype="dashed") +
-    facet_grid(rows = vars(feat_id),  scales = 'free_y')
-  
-  ggplot(filter(bmr_a, red_id != 'Red', hyp_id !=  '0')) + geom_boxplot(aes(x = mod_id, y = classif.ce, col = hyp_id)) +
-    geom_hline(data = filter(bmr_a, red_id != 'Bat', hyp_id ==  '0'), mapping = aes(yintercept = classif.ce, colour = mod_id), linetype="dashed") +
-    facet_grid(rows = vars(feat_id),  scales = 'free_y')
-} # ggplot benchmarks
- 
+# actual benchmarking with future speedup
+library(future)
+plan(multisession) # speeds up benchmarking
+
+if(T){
+  if(file.exists(paste0(reddir, 'dat/bmr.rda'))){load(paste0(reddir, 'dat/bmr.rda'))} else  {bmr <- mlr3::benchmark(grd);
+    bmr_a <- bmr$aggregate();
+    # parse bmr categories; delete capital D
+    bmr_a <- strsplit(bmr_a$task_id, '_') %>% do.call(rbind, .) %>% as.data.table() %>% transmute(., red_id = sub('D','',V1), feat_id = V2) %>% bind_cols(bmr_a, .);
+    # table(bmr_a$feat_id) # all 604
+    bmr_a <- strsplit(bmr_a$learner_id, '_') %>% do.call(rbind, .) %>% as.data.table() %>% transmute(., hyp_id = V2, mod_id = sub('b','',V3), batch_id = V4) %>% bind_cols(bmr_a, .);
+    save(bmr, bmr_a, file = paste0(reddir, 'dat/bmr.rda'))
   }
   
+} # provides (or loads) bmr and bmr_a; benchmarked hyperband tuned learners
+  
+if(T){
+  # y is loss function classif.ce - the lower the better
+  # horisontal lines are --- untrained learner baselines
+  ggplot(filter(bmr_a, red_id == 'Bat', hyp_id !=  '0')) + geom_boxplot(aes(x = mod_id, y = classif.ce, col = hyp_id)) +
+    geom_hline(data = filter(bmr_a, red_id == 'Bat', hyp_id ==  '0'), mapping = aes(yintercept = classif.ce, colour = mod_id), linetype="dashed") +
+    facet_grid(rows = vars(feat_id),  scales = 'free_y') + ggtitle("BAT") 
+ 
+  
+  ggplot(filter(bmr_a, red_id == 'Red', hyp_id !=  '0')) + geom_boxplot(aes(x = mod_id, y = classif.ce, col = hyp_id)) +
+    geom_hline(data = filter(bmr_a, red_id == 'Red', hyp_id ==  '0'), mapping = aes(yintercept = classif.ce, colour = mod_id), linetype="dashed") +
+    facet_grid(rows = vars(feat_id),  scales = 'free_y') + ggtitle("RED")
+  
+  # some baselines overlap
+} # ggplot benchmark
+ 
+# benchmark verdict: with un-tuned models, rg is much better than xg. However, rg does not improve with tuning, while xg does and finally beats rg on classif.ce front.
+# BAT ap - tunign does not beat untuned
 
-# both importance ####
+  
+
+# Feature Impacts ####
+
+# do it in terminal:
+# source('./scr/all_impact_console.R')
+# requires ./dat/super_task.rda; ./dat/grd.rda
+
+load(, file = './dat/all_imp_mcl.rda') #  laads all_imp_mcl
+
+mlr.imp <- lapply(all_imp_mcl, '[[', 1)
+
+# ale.imp <- lapply(all_imp_mcl, '[[', 3)
+
+
+### mlr box ####
+
+if(T){
+  # mingid, kus mlr tulemust ei andnud 
+(idx <- which(sapply(mlr.imp, ncol) == 1 ))
+  
+mlr.importance <- lapply(seq_along(mlr.imp), function(i){mlr.imp[[i]] %>% dplyr::select(-id) %>% colMeans() %>% 
+      data.table(feature = names(.), importance = .) %>% mutate(impmax = as.numeric(vegan::decostand(importance, method = 'max')), imprange = as.numeric(vegan::decostand(importance, method = 'range'))) %>% bind_cols(., bmr_a[i,red_id:batch_id]) }) %>% bind_rows
+  
+mlr.dat <- filter(mlr.importance, feat_id == 'mk')
+
+mlr.dat %>% group_by(red_id, feature) %>% summarise(impmax = mean(impmax, na.rm=T), imprange = mean(imprange, na.rm=T)) %>% arrange(red_id, imprange) %>% print(n=Inf)
+
+# bare bones mlr  
+ggplot(mlr.dat) + geom_boxplot(aes(y = impmax, x=feature), outliers = FALSE) + facet_grid(cols = vars(red_id), scales = 'free_y')  + ggtitle("IML") + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + theme(legend.position="none") + ggtitle('MLR impmax')
+
+ggplot(mlr.dat) + geom_boxplot(aes(y = imprange, x = feature), outliers = FALSE) + facet_grid(cols = vars(red_id), scales = 'free_y')  + ggtitle("IML") + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + theme(legend.position="none") + ggtitle('MLR imprange')
+
+}
+# imprange has more relief
+# VERDICT: BOD rules. BAT 2nds Temp
+
+### iml box ####
+
+iml.imp <- lapply(all_imp_mcl, '[[', 2)
+
+if(T){
+  cmb_feature_groups <- list(
+    ap = grep('ap_',colnames(super_task), value = T) ,
+    mk = grep('mk_',colnames(super_task), value = T) ,
+    pk = grep('pk_',colnames(super_task), value = T) ,
+    st = grep('st_',colnames(super_task), value = T) ,
+    fk = colnames(select(super_task, fk_Flow_rate:fk_EC, -fk_O2)))
+  
+} # iml cmb_feature_groups
+
+if(T){
+
+# scale iml importance estimates with decostand, max and total
+
+iml.importance <- lapply(seq_along(iml.imp), function(i){data.table(iml.imp[[i]])[, mean(importance), by = feature ] %>% 
+    transmute(feature = feature, importance = V1, impmax = as.numeric(decostand(V1, method = 'max')), imprange = as.numeric(decostand(V1, method = 'range'))) %>% 
+    bind_cols(., bmr_a[i, red_id:batch_id]) }) %>% bind_rows() # 1.7 Mb object
+
+iml.dat <- filter(iml.importance, feat_id == 'fk')
+
+# bare bones iml  
+ggplot(iml.dat) + geom_boxplot(aes(y = impmax, x=feature), outliers = FALSE) + facet_grid(cols = vars(red_id), scales = 'free_y')  + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + theme(legend.position="none") + ggtitle('IML impmax')
+
+ggplot(iml.dat) + geom_boxplot(aes(y = imprange, x = feature), outliers = FALSE) + facet_grid(cols = vars(red_id), scales = 'free_y')  +  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + theme(legend.position="none") + ggtitle('IML imprange')
+
+
+iml.dat <- filter(iml.importance, feat_id == 'mk')
+
+iml.dat %>% group_by(red_id, feature) %>% summarise(impmax = mean(impmax, na.rm=T), imprange = mean(imprange, na.rm=T)) %>% arrange(red_id, desc(imprange)) %>% print(n=Inf)
+
+}
+
+# cmb VERDICT: use BAT - fk, pk, st; RED - fk, st, pk; underdogs mk, ap
+# fk : BAT - BOD, Temp, depth, TN; RED - BOD, TN, Depth; underdog TP
+# pk: BAT - 309, 302, 306; RED -  306, 309, 307 underdogs 304, 3011, 3010
+# st: BAT - limestone, gravel; RED - mud, gravel; underdog; clay
+
+### ALE ####
+ale.imp <- lapply(all_imp_mcl, '[[', 3) # 526.8 Mb!! # need to average?
+ale.imp[[1]] # need to average?
+
+idx <- which(bmr_a$feat_id == 'fk' & bmr_a$hyp_id != '0'); length(idx) # 600
+fk_features <- c('fk_BOD', 'fk_Temp','fk_Depth', 'fk_TN')
+
+#rug_base <- data.frame(X = unlist(dplyr::select(tsk_fk_BatD$data(), fk_features)), y_value = 0, lrm = factor(1))
+
+rug_base <- dplyr::select(tsk_fk_BatD$data(), fk_features) %>% pivot_longer(cols=everything(), names_to = 'feature', values_to = 'X') %>% mutate(y=0)
+
+
+ale.dat <- lapply(idx, function(i){
+  filter(ale.imp[[i]], feature %in% fk_features) %>% bind_cols(., bmr_a[i,red_id:batch_id]) 
+}) %>% bind_rows() %>% mutate(group_id = paste(id, batch_id, sep = '_')) # 258000
+
+ggplot(ale.dat, aes(x = X, y = value, col = mod_id)) + 
+     geom_line(aes(group = group_id), alpha = .01) +
+     geom_smooth() + theme(legend.position="none") +
+     facet_grid(cols = vars(red_id), rows = vars(feature))
+
+library(ggside)
+
+ggplot(filter(ale.dat, feature == 'BOD'), aes(x = X, y = value, col = mod_id)) + 
+  geom_line(aes(group = group_id), alpha = .01) +
+  geom_smooth() +
+  geom_rug(mapping = aes(x = X, y = y), data = filter(rug_base, feature == 'BOD'), sides = 'b', inherit.aes = F, col=rgb(.5,0,0, alpha=.1), length = unit(0.02, "npc")) + 
+  geom_xsidedensity(data = filter(rug_base, feature == 'BOD'), mapping = aes(y = after_stat(density)), position = "stack", outline.type = 'upper',  col = 'black') + ggside(x.pos = "bottom") +
+xlim(quantile(tmp$X, probs=c(0.05, .95))) + facet_grid(cols = vars(red_id))
+
+
+
+
+
+geom_rug(mapping = aes(x = (x_value), y = y_value), data = rug_base, sides = 'b', inherit.aes = F, col=rgb(.5,0,0, alpha=.1), length = unit(0.02, "npc")) +
+  geom_xsidedensity(data = rug_base, mapping = aes(y = after_stat(density)), position = "stack", outline.type = 'upper',  col = 'black') + ggside(x.pos = "bottom") + xlim(quantile(fig_base$x_value, probs=c(0.05, .95)))
+
+
+
+
+
+
+
+
+
+
 
 # do it linearly - horribly long, but does not screw up.
 
@@ -312,46 +446,43 @@ if(T){
   
   # partition both_imp to mlr and iml parts
   mlr.imp <- lapply(bothl3_imp, '[[', 2)
+  bothl3_imp[[1]][[1]]
+  
+  mlr.imp <- lapply(all_imp_mcl, '[[', 1)
+  iml.imp <- lapply(all_imp_mcl, '[[', 2)
+  
   
   # scale mlr importance estimates with decostand, max and total
-  tmp <- lapply(mlr.imp, function(x){mutate(x, .by = 'id', impmax = vegan::decostand(importance, method = 'max'), imprange = vegan::decostand(importance, method = 'range'))})
+  tmp <- lapply(iml.imp, function(x){mutate(x, .by = 'id', impmax = vegan::decostand(importance, method = 'max'), imprange = vegan::decostand(importance, method = 'range'))}) # 18 Mb object
   
-  mlr.importance <- list()
+  iml.importance <- list()
   # add all classificators for downstream filtering
   for(i in 1:length(tmp)){
-    mlr.importance[[i]] <- bind_cols(tmp[[i]], bmr_a_sample[i, classif.ce:batch_id])
+    iml.importance[[i]] <- bind_cols(tmp[[i]], bmr_a[i, classif.ce:batch_id])
   }
-  mlr.importance <- bind_rows(mlr.importance)
+  iml.importance <- bind_rows(iml.importance) # 247640  x   11; 20 Mb
   
   
-  # box mlr
+# box mlr
+dat <- filter(iml.importance, feat_id == 'fk', hyp_id != '0'); dim(dat)
   
-  dat <- filter(mlr.importance, feat_id == 'fk')
+  dat1 <- group_by(dat, feature, red_id, mod_id, hyp_id, batch_id) %>% summarise(importance = mean(importance), impmax = mean(impmax), imprange = mean(imprange), id = mean(as.numeric(id))) 
   
-  ggplot(dat) + geom_boxplot(aes(y = impmax, x=feature, col=hyp_id)) + facet_grid(rows = vars(mod_id),  cols = vars(red_id), scales = 'free_y')  + ggtitle("MLR") + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + theme(legend.position="none")
+  dat2 <- mutate(ungroup(dat1), .by = c('red_id', 'mod_id', 'hyp_id', 'batch_id'), impmax = vegan::decostand(importance, method = 'max'), imprange = vegan::decostand(importance, method = 'range'))
+
+# bare bones ggfig; for granularity add color to aes and/or rows = vars(mod_id) to facet_grid
+  ggplot(dat2) + geom_boxplot(aes(y = impmax, x=feature)) + facet_grid(cols = vars(red_id), scales = 'free_y')  + ggtitle("IML") + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + theme(legend.position="none")
   
-  ggplot(dat) +  geom_boxplot(aes(y = imprange, x=feature, col=hyp_id)) + facet_grid(rows = vars(mod_id),  cols = vars(red_id), scales = 'free_y')  + ggtitle("MLR") + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + theme(legend.position="none")
-  
-  
-  # box iml
-  
-  iml.imp <- lapply(bothl3_imp, '[[', 1)
-  
-  tmp <- list()
-  for(i in 1:length(iml.imp)){
-    tmp[[i]] <- pivot_longer(iml.imp[[i]], cols = -id, names_to = 'feature', values_to = 'importance') %>% 
-      bind_cols(., bmr_a_sample[i,]) %>% 
-      mutate(., .by = 'id', impmax = vegan::decostand(importance, method = 'max'), imprange = vegan::decostand(importance, method = 'range'))
-  }
-  iml.importance <- bind_rows(tmp)
-  
-  iml.dat <- filter(iml.importance, feat_id == 'fk')
-  
-  ggplot(iml.dat) + geom_boxplot(aes(y = impmax, x=feature, col=hyp_id)) + facet_grid(rows = vars(mod_id),  cols = vars(red_id), scales = 'free_y')  + ggtitle("IML") + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + theme(legend.position="none")
-  
-  ggplot(iml.dat) +  geom_boxplot(aes(y = imprange, x=feature, col=hyp_id)) + facet_grid(rows = vars(mod_id),  cols = vars(red_id), scales = 'free_y')  + ggtitle("IML") + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + theme(legend.position="none")
+  ggplot(dat2) + geom_boxplot(aes(y = imprange, x=feature)) + facet_grid( cols = vars(red_id), scales = 'free_y')  + ggtitle("IML") + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + theme(legend.position="none")
   
   
+  
+  
+  ggplot(dat1) + geom_boxplot(aes(y = impmax, x=feature, col=hyp_id)) + facet_grid(rows = vars(mod_id),  cols = vars(red_id), scales = 'free_y')  + ggtitle("IML") + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + theme(legend.position="none")
+
+  ggplot(dat) +  geom_boxplot(aes(y = imprange, x=feature, col=hyp_id)) + facet_grid(rows = vars(mod_id),  cols = vars(red_id), scales = 'free_y')  + ggtitle("IML") + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + theme(legend.position="none")
+  
+
 } # importance figs
 
 
@@ -659,4 +790,39 @@ if(T){
  
   
 } # both_importance
+
+
+# ale engine ####
+grd
+i <- 1
+
+task_tmp <- grd[i, 'task'][[1]][[1]]$clone(deep = T)
+learner_tmp <- grd[i, 'learner'][[1]][[1]]$clone(deep = T)
+learner_tmp$train(task_tmp)
+
+imp.pred <- iml::Predictor$new(model = learner_tmp, data = task_tmp$data())
+FeatureEffect$new(predictor = imp.pred, feature = 'ap_O', grid.size = 26) %>% plot()
+
+FeatureEffect$new(predictor = imp.pred, feature = 'ap_O', grid.points = seq(0,1, by = 0.08)) %>% plot()
+
+tmp <- FeatureEffect$new(predictor = imp.pred, feature = 'ap_O', grid.size = 96)$results %>% filter(.class ==1)
+plot(tmp$ap_O, tmp$.value, type = 'b')
+
+iml::FeatureEffect$new(predictor = imp.pred, feature = 'ap_O', method = 'pdp', grid.points = seq(0,1, by = 0.02))$results %>% filter(.class == 1)
+
+
+imp.pred <- iml::Predictor$new(model = learner_tmp, data = task_tmp$data(), y = task_tmp$target_names)
+
+tmp <- iml::FeatureEffect$new(predictor = imp.pred, feature = 'ap_O')
+
+tmp <- iml::FeatureEffect$new(predictor = imp.pred, feature = 'ap_O', grid.points = seq(0,1, by = 0.1))
+
+iml::FeatureEffect$new(predictor = imp.pred, feature = 'ap_O', grid.size = 60)$results %>% filter(.class ==1) %>% .$ap_O %>%  plot()
+
+
+tmp <- iml::FeatureEffect$new(predictor = imp.pred, feature = 'ap_O', center.at = 1, grid.points = seq(0,1, length = 15))$results %>% filter(.class ==1) # %>% .$ap_O %>%  plot()
+plot(tmp$ap_O, tmp$.value, type = 'b')
+
+
+
 
