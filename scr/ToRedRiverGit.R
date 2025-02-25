@@ -327,29 +327,77 @@ ggplot(ale.dat, aes(x = X, y = value, col = mod_id)) +
      geom_smooth() + theme(legend.position="none") +
      facet_grid(cols = vars(red_id), rows = vars(feature))
 
-library(ggside)
+ale.imp[[1816]] %>% ggplot(aes(x=X, y=value, group = id)) + geom_line() +
+  facet_grid(rows = vars(feature), scales = 'free_y')
 
-ggplot(filter(ale.dat, feature == 'BOD'), aes(x = X, y = value, col = mod_id)) + 
-  geom_line(aes(group = group_id), alpha = .01) +
-  geom_smooth() +
-  geom_rug(mapping = aes(x = X, y = y), data = filter(rug_base, feature == 'BOD'), sides = 'b', inherit.aes = F, col=rgb(.5,0,0, alpha=.1), length = unit(0.02, "npc")) + 
-  geom_xsidedensity(data = filter(rug_base, feature == 'BOD'), mapping = aes(y = after_stat(density)), position = "stack", outline.type = 'upper',  col = 'black') + ggside(x.pos = "bottom") +
-xlim(quantile(tmp$X, probs=c(0.05, .95))) + facet_grid(cols = vars(red_id))
+data.table(ale.imp[[1816]])
+ale.imp[[1816]]$id %>% table()
 
 
+fk_features <- c('fk_BOD', 'fk_Temp','fk_Depth', 'fk_TN')
+
+idx <- which(bmr_a$feat_id == 'fk' & bmr_a$hyp_id != '0'); length(idx) # 1815 1816 1817 1818 1819 1820
+
+tmp <- lapply(idx, function(i){bind_cols(ale.imp[[i]], bmr_a[i, red_id:batch_id])}) %>% bind_rows() %>% mutate(group_id = paste(id, batch_id, sep = '_')) 
 
 
+ggplot(filter(tmp, mod_id == 'rg'), aes(x=X, y=value, color = hyp_id, group = group_id)) + geom_line() + facet_grid(rows = vars(feature), cols = vars(red_id), scales = 'free_y')
 
-geom_rug(mapping = aes(x = (x_value), y = y_value), data = rug_base, sides = 'b', inherit.aes = F, col=rgb(.5,0,0, alpha=.1), length = unit(0.02, "npc")) +
-  geom_xsidedensity(data = rug_base, mapping = aes(y = after_stat(density)), position = "stack", outline.type = 'upper',  col = 'black') + ggside(x.pos = "bottom") + xlim(quantile(fig_base$x_value, probs=c(0.05, .95)))
-
-
-
-
+ggplot(filter(tmp, mod_id == 'rg'), aes(x=X, y=value, color = hyp_id)) + geom_point() + facet_grid(rows = vars(feature), cols = vars(red_id), scales = 'free_y') + geom_smooth()
 
 
 
 
+
+if(T){
+  
+  idx <- which(bmr_a$feat_id == 'fk' & bmr_a$hyp_id != '0'); length(idx) # 1815 1816 1817 1818 1819 1820
+  
+  
+  tmp <- lapply(idx, function(i){ale.imp[[i]] %>% summarise(value = mean(value, na.rm=T), .by = c(feature, X)) %>%  bind_cols(., bmr_a[i, red_id:batch_id])}) %>% bind_rows()
+  # ggpubr::show_point_shapes() # geom_point(shape = 21, fill = "lightgray", color = "black", size = 3)
+  
+  tmp <- lapply(idx, function(i){filter(ale.imp[[i]], feature %in% fk_features) %>% bind_cols(., bmr_a[i, red_id:batch_id])}) %>% bind_rows() %>% mutate(group_id = paste(id, batch_id, sep = '_')) 
+  
+  
+  ggplot(filter(tmp, mod_id == 'xg'), aes(x=X, y=value)) + geom_point(alpha = .1, shape = 20) + facet_grid(rows = vars(feature), cols = vars(red_id), scales = 'free_y') + geom_smooth(method = 'loess', se = FALSE)
+  
+  ggplot(filter(tmp, mod_id == 'rg', hyp_id == '1'), aes(x=X, y=value)) + geom_point(alpha = .1, shape = 20) + facet_grid(rows = vars(feature), cols = vars(red_id), scales = 'free_y') + geom_smooth(method = 'loess', se = FALSE)
+  
+  # c('fk_BOD', 'fk_Temp','fk_Depth', 'fk_TN')
+  
+  ggplot(filter(tmp,  feature == 'fk_BOD'), aes(x=X, y=value, col = mod_id)) + geom_point(alpha = .1, shape = 20) + geom_smooth(method = 'loess', se = FALSE) + facet_grid(cols = vars(mod_id),  scales = 'free_y') 
+  
+  
+  ggplot(filter(tmp,  feature == 'fk_Temp'), aes(x=X, y=value, col = mod_id)) + geom_point(alpha = .1, shape = 20) + geom_smooth(method = 'loess', se = FALSE) 
+  
+  
+  
+  library(ggside)
+  
+  ggplot(filter(ale.dat, feature == 'BOD'), aes(x = X, y = value, col = mod_id)) + 
+    geom_line(aes(group = group_id), alpha = .01) +
+    geom_smooth() +
+    geom_rug(mapping = aes(x = X, y = y), data = filter(rug_base, feature == 'BOD'), sides = 'b', inherit.aes = F, col=rgb(.5,0,0, alpha=.1), length = unit(0.02, "npc")) + 
+    geom_xsidedensity(data = filter(rug_base, feature == 'BOD'), mapping = aes(y = after_stat(density)), position = "stack", outline.type = 'upper',  col = 'black') + ggside(x.pos = "bottom") +
+    xlim(quantile(tmp$X, probs=c(0.05, .95))) + facet_grid(cols = vars(red_id))
+  
+  
+  
+  
+  
+  geom_rug(mapping = aes(x = (x_value), y = y_value), data = rug_base, sides = 'b', inherit.aes = F, col=rgb(.5,0,0, alpha=.1), length = unit(0.02, "npc")) +
+    geom_xsidedensity(data = rug_base, mapping = aes(y = after_stat(density)), position = "stack", outline.type = 'upper',  col = 'black') + ggside(x.pos = "bottom") + xlim(quantile(fig_base$x_value, probs=c(0.05, .95)))
+  
+  
+  
+  
+  
+  
+} ### HERE ale figs ####
+
+
+# from here on - old crap
 
 
 
@@ -825,4 +873,26 @@ plot(tmp$ap_O, tmp$.value, type = 'b')
 
 
 
+
+load(file = './dat/pdp_imp_mcl.rda')
+grd_sample
+length(pdp_imp_mcl)
+pdp_imp_mcl[[1]] # st
+
+pdp_imp_mcl[[4]] %>% ggplot(aes(x=X, y=value, group = id)) + geom_line() +
+ facet_grid(rows = vars(feature), scales = 'free_y')
+
+ale.imp[[1]] %>% ggplot(aes(x=X, y=value, group = id)) + geom_line() +
+  facet_grid(rows = vars(feature), scales = 'free_y')
+
+super_task$pk_303
+
+bmr_a
+idx <- which(bmr_a$feat_id == 'mk') # 1813 1814 1815 1816 1817 1818 1819 1820
+
+ale.imp[[1816]] %>% ggplot(aes(x=X, y=value, group = id)) + geom_line() +
+  facet_grid(rows = vars(feature), scales = 'free_y')
+
+pdp_imp_mcl[[4]] %>% ggplot(aes(x=X, y=value, group = id)) + geom_line() +
+  facet_grid(rows = vars(feature), scales = 'free_y')
 
