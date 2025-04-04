@@ -48,6 +48,10 @@ docs/
 # translation temp files
 po/*~
 
+# oldies files
+oldies/
+
+
 # RStudio Connect folder
 rsconnect/
 .Rproj.user
