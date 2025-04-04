@@ -1,0 +1,1 @@
+system("R CMD BATCH ./scr/ToRedRiverGit_v2.R ToRedRiverGit.txt")
