@@ -18,3 +18,9 @@
  Rscript scr/red_river_3.R
  Rscript scr/red_river_4.R
 Rscript scr/red_river_5.R # memory hungry
+Rscript scr/red_river_6_figs1.R 
+Rscript scr/red_river_7_figs2.R 
+Rscript scr/red_river_8_figs3.R 
+
+# supplementary material
+
