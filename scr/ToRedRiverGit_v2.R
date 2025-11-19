@@ -439,10 +439,19 @@ if(F){
     ggplot(tmp_df, aes(y=score, x=feature, fill = feature, colour = feature)) + geom_boxplot(alpha = 0.4) +  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + theme(legend.position="none")
     
     
+    
+    
+    BatD <- transmute(super_task, y = as.numeric(as.logical(Batrachospermum))) 
+    RedD <- dplyr::select(super_task, Audouniella.hermannii:Lemanea.rigida) %>% transmute(y = as.numeric(as.logical(rowSums(.))))
+    
+    tsk_fk_BatD <- dplyr::select(super_task, starts_with('fk_')) %>% bind_cols(BatD,.) %>% as_task_classif(target = "y", positive = "1", id = 'BatD_fk')
+    tsk_fk_RedD <- dplyr::select(super_task, starts_with('fk_')) %>% bind_cols(RedD,.) %>% as_task_classif(target = "y", positive = "1", id = 'Red_fk')
+    
+    
     learner_rf <- as_learner(po("imputemedian") %>>% lrn('classif.ranger', importance = 'impurity'))
     learner_xg <-  lrn('classif.xgboost')
     
-    no_feature <- c('fk_O2','fk_Flow_rate','fk_COD','fk_NH4', 'fk_TN')
+    no_feature <- c('fk_O2','fk_Flow_rate','fk_COD','fk_NH4')
     
     tsk_Bat <- tsk_fk_BatD$clone(deep = T)$select(setdiff(tsk_fk_BatD$feature_names, no_feature))
     tsk_Red <- tsk_fk_RedD$clone(deep = T)$select(setdiff(tsk_fk_RedD$feature_names, no_feature))
