@@ -10,13 +10,14 @@ library(xgboost)
 library(mlr3tuningspaces)
 library(mlr3extralearners)
 library(dplyr)
-library(tidyverse)
-
 library(parallel)
 
-reddir <- system("find ~/Documents -name 'red_river.Rproj' ", intern = T) %>% sub('red_river.Rproj','', .)
-load(paste0(reddir, 'dat/super_task.rda') ) 
-load(paste0(reddir,'./dat/grd2.rda'))
+if(!exists('reddir')){
+  reddir <- list.files(path = '~/Documents', full.names = TRUE, recursive = TRUE, pattern = 'red_river.Rproj') %>% dirname()
+}
+
+load(paste0(reddir, '/dat/super_task.rda') ) # loads super_task
+load(paste0(reddir,'./dat/grd2.rda')) # loads benchmark grid 
 
 super_task <- dplyr::select(super_task, -c("fk_Flow_rate","fk_NH4","fk_O2","fk_COD"))
 
@@ -37,11 +38,11 @@ all_imp_mcl <- mclapply(1:nrow(grd_sample),function(i){         # i loop: 1 to 3
   task_tmp <- grd_sample[i, 'task'][[1]][[1]]$clone(deep = T)
   learner_tmp <- grd_sample[i, 'learner'][[1]][[1]]$clone(deep = T)
   if(grepl('_rg_', learner_tmp$id)){learner_tmp$param_set$values$classif.ranger.importance = 'impurity'}
-  feats = NULL # feats for permutational feature importance
+  feats = NULL # feats = features for permutational feature importance
   if(grepl('_cmb', task_tmp$id)){feats <- cmb_feature_groups}
   task_feature_names <- task_tmp$feature_names
   
-  iml_lst <-  ale_lst <- list() # igasse kogume 10 hinnangut
+  iml_lst <-  ale_lst <- list() # each set will have 10 assessments 
   message("Processing item ", i)
   for(j in 1:10){
     message("Processing replicate j ", j)
@@ -59,4 +60,10 @@ all_imp_mcl <- mclapply(1:nrow(grd_sample),function(i){         # i loop: 1 to 3
   return(list(bind_rows(iml_lst, .id = 'id') %>% summarise(., importanceSD = sd(importance, na.rm=T), importance = mean(importance, na.rm=T), .by=feature), bind_rows(ale_lst, .id = 'id') %>% summarise(., valueSD = sd(value, na.rm=T), value = mean(value, na.rm=T), .by=c(feature, X)) ))
 }, mc.cores = 10)
 
-save(all_imp_mcl, file = paste0(reddir, 'dat/all_imp_mcl_v2.rda'))
+
+save(all_imp_mcl, file = paste0(reddir, '/dat/all_imp_mcl_v2.rda'))
+
+message("Feature importance saved in ./dat/all_imp_mcl_v2.rda  \n\n ")
+message(" proceed with red_river_6.R \n")
+
+

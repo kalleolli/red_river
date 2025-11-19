@@ -15,7 +15,7 @@ library(dplyr)
 # hyperband tuning of learners on 12 tasks
 
 
-if(!exists(reddir)){
+if(!exists('reddir')){
 reddir <- list.files(path = '~/Documents', full.names = TRUE, recursive = TRUE, pattern = 'red_river.Rproj') %>% dirname()
 }
 
@@ -39,5 +39,6 @@ for(i in 1:length(tsks)){
   save(hyptune_heads, file = savedir)}
 
 message("All hyperband tunign completed \n")
+message(" proceed with red_river_3.R \n")
 
 # provides 12 hyptune2_tsk_*.rda header files in ./dat folder

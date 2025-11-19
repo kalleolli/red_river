@@ -11,10 +11,12 @@ library(xgboost)
 library(mlr3tuningspaces)
 library(mlr3extralearners)
 library(dplyr)
-library(tidyverse)
 
-reddir <- system("find ~/Documents -name 'red_river.Rproj' ", intern = T) %>% sub('red_river.Rproj','', .)
-load(paste0(reddir, 'dat/grd2.rda'))
+if(!exists('reddir')){
+  reddir <- list.files(path = '~/Documents', full.names = TRUE, recursive = TRUE, pattern = 'red_river.Rproj') %>% dirname()
+}
+
+load(paste0(reddir, '/dat/grd2.rda'))
  
 message("Actual benchmarking with future speedup \n\n ")
   
@@ -29,5 +31,14 @@ bmr_a <- strsplit(bmr_a$task_id, '_') %>% do.call(rbind, .) %>% as.data.table() 
 # table(bmr_a$feat_id) # all 604
 bmr_a <- strsplit(bmr_a$learner_id, '_') %>% do.call(rbind, .) %>% as.data.table() %>% transmute(., hyp_id = V2, mod_id = sub('b','',V3), batch_id = V4) %>% bind_cols(bmr_a, .);
 
-save(bmr, bmr_a, file = paste0(reddir, 'dat/bmr2.rda'))
+
+
+if(!file.exists(file = paste0(reddir, '/dat/bmr2.rda'))){
+  save(bmr, bmr_a, file = paste0(reddir, '/dat/bmr2.rda'))
+}
+
+
+message("Benchmark grid saved in ./dat/bmr2.rda  \n\n ")
+message(" proceed with red_river_5.R \n")
+
 

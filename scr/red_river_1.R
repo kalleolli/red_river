@@ -35,6 +35,56 @@ if(F){
   # mk_pold to mk_soo - watershed land cover features (mk_ prefix) pold - arable land, soo - bog, mets - forest, rohumaa - grassland
 } # describe super_task data frame
 
+
+# Tables ####
+# required super_task
+
+if(T){
+  # helper func, if we want range, use probs c(0., 0.5, 1)
+  quantile_df <- function(x, probs = c(0.5, 0.05, 0.95)) {
+    tibble(val = quantile(x, probs, na.rm = TRUE)) }
+  
+  table3 <- list()
+  
+  table3[['Audouniella']] <- 
+    super_task %>% filter( if_any(starts_with('Audouniella') , ~ . > 0) ) %>% 
+    reframe(across(starts_with('fk_'), quantile_df, .unpack = TRUE))
+  
+  table3[['Batrachospermum']] <- 
+    super_task %>% filter( if_any(starts_with('Batrachospermum') , ~ . > 0) ) %>% 
+    reframe(across(starts_with('fk_'), quantile_df, .unpack = TRUE))
+  
+  table3[['Lemanea']] <- 
+    super_task %>% filter( if_any(starts_with('Lemanea') , ~ . > 0) ) %>% 
+    reframe(across(starts_with('fk_'), quantile_df, .unpack = TRUE))
+  
+  table3[['Hildenbrandia']] <- 
+    super_task %>% filter( if_any(starts_with('Hildenbrandia') , ~ . > 0) ) %>% 
+    reframe(across(starts_with('fk_'), quantile_df, .unpack = TRUE))
+  
+  lapply(table3, signif, 3) %>% #lapply(select, -fk_O2_val)
+    bind_rows(, .id='taxon') %>% select(-taxon) %>% t() %>% format(scientific=F)
+  
+  
+
+  table3 <- lapply(table3, function(x){signif(x,3) %>% apply(2,function(y){paste0(y[1],' (',y[2],'-',y[3],')')})}) %>% bind_rows(., .id='Feature') %>% t()
+  
+  rownames(table3) <- rownames(table3) %>% sub('fk_','',.) %>% sub('_val','',.)
+  
+  write.table(table3, file = paste0(reddir,'/tables/red_river_table3.csv'), col.names = FALSE, sep = '\t' , quote = FALSE) 
+  
+  table1_df <- function(x, probs = c(0.05, 0.5, 0.95)) {
+    tibble(val = c(quantile(x, probs, na.rm = TRUE), sum(!is.na(x)) ) )}
+  
+  table1 <- reframe(super_task, across(starts_with('fk_'), table1_df, .unpack = TRUE)) %>% t() %>% signif(.,3)
+  rownames(table1) <- rownames(table1) %>% sub('fk_','',.) %>% sub('_val','',.)
+  colnames(table1) <- c( '5th percentile','Median', '95th percentile', 'n')
+  write.table(table1, file = paste0(reddir,'/tables/red_river_table1.csv'), col.names = TRUE, sep = '\t' , quote = FALSE) 
+  
+ 
+} # saves table1 and table3 to ./tables folder
+
+
 # correlation matrix of physical-chemical features
 # dplyr::select(super_task, starts_with('fk_')) %>% cor(use = 'pairwise.complete.obs')
 

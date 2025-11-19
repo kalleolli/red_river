@@ -15,12 +15,14 @@ library(rnaturalearthdata)
 library(sf)
 library(RColorBrewer)
 
-reddir <- system("find ~/Documents -name 'red_river.Rproj' ", intern = T) %>% sub('red_river.Rproj','', .)
+
+if(!exists('reddir')){
+  reddir <- list.files(path = '~/Documents', full.names = TRUE, recursive = TRUE, pattern = 'red_river.Rproj') %>% dirname()
+}
 # source(paste0(reddir, 'scr/red_river_preamble.R'))
 
 
 rm(list=grep('reddir',ls(), value = T, invert = T)) # garbage collect all but reddir
-
 
 
 load(paste0(reddir, './dat0/est.rda')) # est 40 kB
