@@ -11,24 +11,30 @@ library(xgboost)
 library(mlr3tuningspaces)
 library(mlr3extralearners)
 library(dplyr)
-library(tidyverse)
 
-reddir <- system("find ~/Documents -name 'red_river.Rproj' ", intern = T) %>% sub('red_river.Rproj','', .)
-load(paste0(reddir, 'dat/red_river_1.rda'))
+# hyperband tuning of learners on 12 tasks
 
-for(i in 1:length(tsks)){ # 6 CPUs but each takes GB's of memory and swap
-  hyptune <-  parallel::mclapply(glrn_xx_lst, function(x){
+
+if(!exists(reddir)){
+reddir <- list.files(path = '~/Documents', full.names = TRUE, recursive = TRUE, pattern = 'red_river.Rproj') %>% dirname()
+}
+
+load(paste0(reddir, '/dat/red_river_1.rda')) # load tsks, glrn_xx_lst, which were created in red_river_1.R
+
+for(i in 1:length(tsks)){ 
+  hyptune <-  parallel::mclapply(glrn_xx_lst, function(x){ # x is graph learner; we have 6 of them. 6 CPUs - each takes GB's of memory and swap
     try(mlr3tuning::tune(
       tuner = mlr3tuning::tnr("hyperband", eta = 2, repetitions = 1), 
       task = tsks[[i]], 
-      learner = x, # saame siia kõik 6 learnerit suruda
+      learner = x,
       resampling = mlr3::rsmp("cv", folds = 3),
       measures = mlr3::msr("classif.ce"),
-      terminator = bbotk::trm("none")), silent = T )}, mc.cores = 6) # siit on vaja salvestada ainult headerid
+      terminator = bbotk::trm("none")), silent = T )}, mc.cores = 6) 
   
+  # from here we only save top 50 hyperparameter sets per learner
   hyptune_heads <- lapply(lapply(hyptune, '[[', 'archive'), '[[', 'data') %>% lapply(., function(x){arrange(x, classif.ce) %>% head(50) %>% dplyr::select(classif.ce, x_domain)})
   
-  savedir <- paste0(reddir, 'dat/hyptune_', names(tsks)[i],'.rda')
+  savedir <- paste0(reddir, '/dat/hyptune_', names(tsks)[i],'.rda')
   message("Task ", names(tsks)[i] ," hyperband tuning completed \n")
   save(hyptune_heads, file = savedir)}
 
